@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h4>Results</h4>
+  <p><strong>Config:</strong> {{ config_path }}</p>
+  {% if saved_path %}<p><strong>Dataset:</strong> {{ saved_path }}</p>{% endif %}
+</section>
+
+<section>
+  <h5>Contexts</h5>
+  {% if table_records and table_records|length > 0 %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>context</th>
+        <th>state</th>
+        <th>risk</th>
+        <th>z_score</th>
+        <th>rel_change</th>
+        <th>change_point</th>
+        <th>plots</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in table_records %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td><code>{{ row.context }}</code></td>
+        <td>{{ row.state }}</td>
+        <td>{{ row.risk }}</td>
+        <td>{{ row.z_score }}</td>
+        <td>{{ row.rel_change }}</td>
+        <td>{{ row.change_point }}</td>
+        <td>
+          <a href="#" onclick='loadPlots({{ row.context_json | safe }}); return false;'>open</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No contexts with enough points.</p>
+  {% endif %}
+</section>
+
+<section id="plots" style="display:none;">
+  <h5>Charts</h5>
+  <div id="main_plot"></div>
+  <div id="diag_plot"></div>
+  <pre id="details" style="white-space: pre-wrap;"></pre>
+</section>
+
+<p><a href="{{ url_for('index', config=config_path) }}">Back</a></p>
+
+<script>
+  async function loadPlots(ctx) {
+    // ctx is a JSON object (context dict). Send it as encoded JSON string.
+    const ctxParam = encodeURIComponent(JSON.stringify(ctx));
+    const params = new URLSearchParams({
+      config_path: "{{ config_path }}",
+      ctx: ctxParam
+      {% if saved_path %}, saved_path: "{{ saved_path }}"{% endif %}
+    });
+    const resp = await fetch("/context_plot?" + params.toString());
+    if (!resp.ok) {
+      alert("Failed to load plots");
+      return;
+    }
+    const data = await resp.json();
+    document.getElementById('plots').style.display = 'block';
+    Plotly.newPlot('main_plot', data.main.data, data.main.layout, {responsive: true});
+    Plotly.newPlot('diag_plot', data.diag.data, data.diag.layout, {responsive: true});
+    document.getElementById('details').textContent = JSON.stringify({
+      state: data.state,
+      detector_result: data.detector_result,
+      meta_last: data.meta_last,
+      context: data.context
+    }, null, 2);
+  }
+</script>
+{% endblock %}
+
+

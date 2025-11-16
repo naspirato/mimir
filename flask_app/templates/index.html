@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h4>1) Choose config</h4>
+  <form method="get" action="{{ url_for('index') }}">
+    <label>
+      Config
+      <select name="config">
+        {% for path, s in configs.items() %}
+          <option value="{{ path }}" {% if path == selected %}selected{% endif %}>{{ path }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Save format
+      <select name="fmt">
+        <option value="csv" {% if fmt == 'csv' %}selected{% endif %}>csv</option>
+        <option value="jsonl" {% if fmt == 'jsonl' %}selected{% endif %}>jsonl</option>
+      </select>
+    </label>
+    <button type="submit">Apply</button>
+  </form>
+</section>
+
+{% if selected %}
+<section>
+  <h4>2) Fetch dataset</h4>
+  <form method="post" action="{{ url_for('fetch') }}">
+    <input type="hidden" name="config_path" value="{{ selected }}">
+    <input type="hidden" name="fmt" value="{{ fmt }}">
+    <label>
+      Output path
+      <input type="text" name="out_path" value="{{ default_out }}">
+    </label>
+    <button type="submit" class="contrast">Fetch</button>
+  </form>
+</section>
+
+<section>
+  <h4>3) Analyze</h4>
+  <div class="grid">
+    <form method="post" action="{{ url_for('analyze_live_route') }}">
+      <input type="hidden" name="config_path" value="{{ selected }}">
+      <button type="submit">Analyze live</button>
+    </form>
+    <form method="post" action="{{ url_for('analyze_saved_route') }}">
+      <input type="hidden" name="config_path" value="{{ selected }}">
+      <label>
+        Saved dataset path
+        <input type="text" name="dataset_path" value="{{ saved_path or default_out }}">
+      </label>
+      <button type="submit">Analyze from saved</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+
+
