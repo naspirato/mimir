@@ -357,6 +357,9 @@ class UniversalTSDetectorV2:
         for ctx_vals, group in df.groupby(context_fields):
             if not isinstance(ctx_vals, tuple):
                 ctx_vals = (ctx_vals,)
+            # Skip too-small groups to avoid hard error from analyze()
+            if len(group) < 10:
+                continue
             s = pd.Series(
                 group[value_field].astype(float).values,
                 index=group[timestamp_field].values,

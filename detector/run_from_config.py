@@ -17,7 +17,11 @@ def load_config(path: str) -> DataConfig:
 
 
 def load_dataset(cfg: DataConfig) -> pd.DataFrame:
-    adapter = AdapterRegistry.create(cfg.dataset.adapter, cfg.dataset.adapter_config)
+    # Merge dataset-level field names into adapter config so adapters can validate/parse correctly
+    adapter_config: Dict[str, Any] = dict(cfg.dataset.adapter_config)
+    adapter_config.setdefault("timestamp_field", cfg.dataset.timestamp_field)
+    adapter_config.setdefault("value_field", cfg.dataset.value_field)
+    adapter = AdapterRegistry.create(cfg.dataset.adapter, adapter_config)
     df = adapter.load()
     return df
 
