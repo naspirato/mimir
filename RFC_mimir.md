@@ -43,10 +43,94 @@ DataFrame должен позволять группировать нескол�
 2.2 Metric type
 ---------------
 Каждая серия имеет:
-- metric_kind (duration, error_rate, binary_error, count, other)
+- metric_kind: тип метрики, определяющий стратегию трансформации
 - direction:
     - higher_is_better  (пример: throughput)
     - lower_is_better   (пример: latency, error_rate)
+
+Поддерживаемые типы метрик:
+
+**duration / latency**
+- Описание: Время выполнения, задержки, длительность операций
+- Примеры: `login_time`, `api_response_time`, `query_duration`, `rendering_time`
+- Трансформация: log-transform (log1p)
+- Причина: Правостороннее распределение с длинным хвостом
+- Direction: обычно `lower_is_better`
+- Типичный диапазон: миллисекунды - секунды
+
+**error_rate / failure_rate**
+- Описание: Процент ошибок, доля неудачных запросов (0-1 или 0-100%)
+- Примеры: `error_rate`, `failure_percentage`, `crash_rate`, `timeout_rate`
+- Трансформация: logit-transform (стабилизирует дисперсию для биномиального распределения)
+- Причина: Ограниченный диапазон, биномиальное распределение
+- Direction: `lower_is_better`
+- Типичный диапазон: [0, 1] или [0, 100%]
+
+**count / rate**
+- Описание: Количество событий в единицу времени, частота
+- Примеры: `request_count`, `events_per_second`, `page_views`, `transactions_per_hour`
+- Трансформация: square-root (стабилизирует дисперсию для пуассоновских данных)
+- Причина: Счетные данные, дисперсия пропорциональна среднему
+- Direction: зависит от контекста
+- Типичный диапазон: неотрицательные целые числа
+
+**throughput / capacity**
+- Описание: Пропускная способность, производительность
+- Примеры: `requests_per_second`, `throughput`, `bandwidth`, `qps`
+- Трансформация: log-transform (log1p) для стабилизации дисперсии
+- Причина: Часто правостороннее распределение, вариативность растет с ростом
+- Direction: `higher_is_better`
+- Типичный диапазон: положительные значения
+
+**percentage / ratio**
+- Описание: Проценты, доли, соотношения (0-1 или 0-100%)
+- Примеры: `cpu_usage_percent`, `memory_usage`, `cache_hit_ratio`, `success_rate`
+- Трансформация: arcsine-sqrt (arcsine transformation) или logit
+- Причина: Ограниченный диапазон, стабилизация дисперсии на границах
+- Direction: зависит от метрики
+- Типичный диапазон: [0, 1] или [0, 100%]
+
+**binary / boolean**
+- Описание: Бинарные метрики (0/1), наличие/отсутствие события
+- Примеры: `is_error`, `test_passed`, `feature_enabled`, `health_check`
+- Трансформация: без трансформации (требует агрегации)
+- Причина: Дискретные значения, требуют агрегации по окну
+- Direction: `lower_is_better` (для ошибок), `higher_is_better` (для успехов)
+- Типичный диапазон: 0 или 1
+
+**gaussian / normal**
+- Описание: Метрики с приблизительно нормальным распределением
+- Примеры: `temperature`, `cpu_load`, `balanced_score`, `normalized_metric`
+- Трансформация: без трансформации (или Z-score normalization)
+- Причина: Симметричное распределение, стабильная дисперсия
+- Direction: зависит от контекста
+- Типичный диапазон: любой диапазон
+
+**size / bytes**
+- Описание: Размеры файлов, памяти, данных
+- Примеры: `file_size`, `memory_usage_bytes`, `payload_size`, `database_size`
+- Трансформация: log-transform (log10) для больших значений
+- Причина: Правостороннее распределение, большие разбросы значений
+- Direction: обычно `lower_is_better` (для оптимизации)
+- Типичный диапазон: байты, килобайты, мегабайты
+
+**other / generic**
+- Описание: Общий тип для неизвестных метрик
+- Примеры: любые метрики без специфической обработки
+- Трансформация: без трансформации (или auto-detect на основе статистики)
+- Причина: Универсальность, минимальная обработка
+- Direction: указывается явно
+- Типичный диапазон: любой диапазон
+
+Автоматическое определение типа:
+- Система может автоматически определять тип метрики на основе статистических характеристик:
+  * Диапазон значений (bounded/unbounded)
+  * Распределение (skewness, kurtosis)
+  * Тип значений (integer-like, binary)
+  * Отношение дисперсии к среднему (для пуассоновских данных)
+- Автоопределение можно включить через `auto_detect_metric_type=True`
+- Можно предоставить hint через `metric_name_hint` для улучшения определения
+- Пользователь может проверить определенный тип в результатах анализа через `metric_type_detection`
 
 2.3 Multi-series handling
 -------------------------
@@ -151,8 +235,16 @@ flowchart TD
 -----------------
 - сортировка по timestamp
 - удаление NaN
-- лог-трансформ если metric_kind = duration:
-  value := log1p(value)
+- трансформация согласно metric_kind:
+  - duration: log-transform (log1p)
+  - error_rate: logit-transform
+  - count: square-root transform
+  - throughput: log-transform (log1p)
+  - percentage: arcsine-sqrt transform
+  - binary: без трансформации (требует агрегации)
+  - gaussian: без трансформации
+  - size: log10-transform
+  - other: без трансформации (или auto-detect)
 
 4.2 Seasonality removal
 -----------------------

@@ -28,9 +28,17 @@ from detector import UniversalTSDetectorV2, AlertEngineV2
 # Загрузка данных
 df = pd.read_csv("metrics_example.csv")
 
-# Создание детектора
+# Создание детектора с явным типом метрики
 detector = UniversalTSDetectorV2(
     metric_kind="duration",
+    direction="lower_is_better",
+)
+
+# Или с автоматическим определением типа
+detector_auto = UniversalTSDetectorV2(
+    metric_kind=None,  # Будет определен автоматически
+    auto_detect_metric_type=True,
+    metric_name_hint="login_time",  # Опциональный hint для лучшего определения
     direction="lower_is_better",
 )
 
@@ -43,6 +51,14 @@ results = detector.analyze_many(
     timestamp_field="timestamp",
 )
 
+# Проверка автоматически определенного типа
+for ctx, res in results.items():
+    if "metric_type_detection" in res:
+        detection = res["metric_type_detection"]
+        print(f"Detected type: {detection['detected_type']}")
+        print(f"Description: {detection['description']['name']}")
+        print(f"Transformation: {detection['description']['transformation']}")
+
 # Stateful алертинг
 state_store = {}
 engine = AlertEngineV2(state_store)
@@ -52,6 +68,22 @@ for ctx, res in results.items():
     if alerts:
         print(f"Alerts for {ctx}: {alerts}")
 ```
+
+## Поддерживаемые типы метрик
+
+Система поддерживает 9 типов метрик с соответствующими трансформациями:
+
+- **duration** / **latency** - log-transform (для времени выполнения)
+- **error_rate** / **failure_rate** - logit-transform (для процентов ошибок)
+- **count** / **rate** - square-root (для счетных данных)
+- **throughput** / **capacity** - log-transform (для пропускной способности)
+- **percentage** / **ratio** - arcsine-sqrt (для процентов и долей)
+- **binary** / **boolean** - без трансформации (для бинарных метрик)
+- **gaussian** / **normal** - без трансформации (для нормального распределения)
+- **size** / **bytes** - log10-transform (для размеров)
+- **other** / **generic** - без трансформации (универсальный тип)
+
+Подробнее см. [RFC_mimir.md](RFC_mimir.md) раздел 2.2.
 
 ## Структура проекта
 
