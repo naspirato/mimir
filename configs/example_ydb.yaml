@@ -1,0 +1,28 @@
+version: 1
+
+dataset:
+  adapter: ydb
+  adapter_config:
+    wrapper_kwargs:
+      config_path: detector/config/ydb_qa_config.json
+      enable_statistics: true
+    query: |
+      SELECT timestamp, value, branch, build_type, testname, commit
+      FROM test_results/analytics/test_history_fast
+      WHERE testname = "login"
+    query_name: test_history_login
+  timestamp_field: timestamp
+  value_field: value
+
+analysis:
+  context_fields: [branch, build_type, testname]
+  meta_fields: [commit]
+  metrics:
+    name: login_time
+    direction: lower_is_better
+    metric_kind: duration
+    auto_detect_metric_type: true
+  event_types: [regression, improvement]
+  output:
+    debug: false
+

@@ -101,6 +101,60 @@ mimir/
 pytest tests/
 ```
 
+## Конфигурационный запуск (YAML)
+
+Можно описать источник данных и параметры анализа в одном YAML и запустить анализ без кода.
+
+Пример для CSV: `configs/example_csv.yaml`
+
+```yaml
+version: 1
+dataset:
+  adapter: csv
+  adapter_config:
+    path: examples/metrics_example.csv
+    parse_dates: true
+  timestamp_field: timestamp
+  value_field: value
+analysis:
+  context_fields: [branch, build_type, testname]
+  meta_fields: [commit]
+  metrics:
+    name: api_latency
+    direction: lower_is_better
+    metric_kind: duration
+    auto_detect_metric_type: true
+  event_types: [regression, improvement]
+  output:
+    debug: true
+```
+
+Запуск:
+
+```python
+from detector.run_from_config import run_from_file
+results = run_from_file("configs/example_csv.yaml")
+```
+
+### Двухэтапный режим: скачать → анализировать
+
+1) Скачивание данных по конфигу и сохранение на диск:
+
+```python
+from detector.run_from_config import load_config, fetch_dataset_to_file
+
+cfg = load_config("configs/example_csv.yaml")
+fetch_dataset_to_file(cfg, "dataset.csv", fmt="csv")  # или fmt=\"jsonl\"
+```
+
+2) Аналитика по сохранённым данным:
+
+```python
+from detector.run_from_config import analyze_from_saved
+
+results = analyze_from_saved(cfg, "dataset.csv", fmt="csv")
+```
+
 ## Подробная документация
 
 См. [RFC_mimir.md](RFC_mimir.md) для полного описания архитектуры и требований.
