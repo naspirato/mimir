@@ -232,7 +232,7 @@ class TestIntegrationWithDetector:
         from detector import UniversalTSDetectorV2
 
         detector = UniversalTSDetectorV2(metric_kind="duration", direction="lower_is_better")
-        s = pd.Series([10, 20, 30, 40, 50] * 10, index=pd.date_range("2024-01-01", periods=50, freq="H"))
+        s = pd.Series([10, 20, 30, 40, 50] * 10, index=pd.date_range("2024-01-01", periods=50, freq="h"))
         result = detector.analyze(s)
         assert result["profile"]["metric_kind"] == "duration"
 
@@ -246,7 +246,7 @@ class TestIntegrationWithDetector:
             direction="lower_is_better",
         )
         # Binary data
-        s = pd.Series([0, 1, 0, 1, 1, 0, 1, 0, 1, 1] * 10, index=pd.date_range("2024-01-01", periods=100, freq="H"))
+        s = pd.Series([0, 1, 0, 1, 1, 0, 1, 0, 1, 1] * 10, index=pd.date_range("2024-01-01", periods=100, freq="h"))
         result = detector.analyze(s)
         assert "metric_kind" in result["profile"]
         # Should have detection info
@@ -263,7 +263,7 @@ class TestIntegrationWithDetector:
             metric_name_hint="login_time",
             direction="lower_is_better",
         )
-        s = pd.Series([10, 20, 30, 40, 50] * 10, index=pd.date_range("2024-01-01", periods=50, freq="H"))
+        s = pd.Series([10, 20, 30, 40, 50] * 10, index=pd.date_range("2024-01-01", periods=50, freq="h"))
         result = detector.analyze(s)
         assert "metric_kind" in result["profile"]
 
@@ -271,7 +271,7 @@ class TestIntegrationWithDetector:
         """Test that different types produce different transformations."""
         from detector import UniversalTSDetectorV2
 
-        s = pd.Series([10, 20, 30, 40, 50] * 10, index=pd.date_range("2024-01-01", periods=50, freq="H"))
+        s = pd.Series([10, 20, 30, 40, 50] * 10, index=pd.date_range("2024-01-01", periods=50, freq="h"))
 
         detector_duration = UniversalTSDetectorV2(metric_kind="duration")
         result_duration = detector_duration.analyze(s, debug=True)
