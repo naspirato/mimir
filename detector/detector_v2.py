@@ -13,6 +13,14 @@ try:
 except ImportError:
     rpt = None
 
+from .metric_types import (
+    MetricType,
+    MetricTypeTransformer,
+    MetricTypeDetector,
+    transform_for_type,
+    detect_metric_type,
+)
+
 
 @dataclass
 class DetectorProfileV2:
@@ -51,15 +59,31 @@ class UniversalTSDetectorV2:
 
     def __init__(
         self,
-        metric_kind: str = "duration",
+        metric_kind: Optional[str] = None,
         direction: str = "lower_is_better",
         use_stl: bool = True,
         use_ruptures: bool = True,
+        auto_detect_metric_type: bool = True,
+        metric_name_hint: Optional[str] = None,
     ) -> None:
+        """
+        Args:
+            metric_kind: Explicit metric type (duration, error_rate, count, etc.)
+                        If None and auto_detect_metric_type=True, will be auto-detected.
+            direction: "higher_is_better" or "lower_is_better"
+            use_stl: Enable STL deseasonalization
+            use_ruptures: Enable ruptures for change point detection
+            auto_detect_metric_type: Auto-detect metric type if metric_kind is None
+            metric_name_hint: Optional metric name hint for better auto-detection
+        """
         self.metric_kind = metric_kind
         self.direction = direction
         self._use_stl = use_stl and (STL is not None)
         self._use_ruptures = use_ruptures and (rpt is not None)
+        self._auto_detect = auto_detect_metric_type
+        self._metric_name_hint = metric_name_hint
+        self._detected_metric_type: Optional[MetricType] = None
+        self._detection_diagnostics: Optional[Dict[str, Any]] = None
 
     # ---------- utils ----------
 
@@ -122,10 +146,9 @@ class UniversalTSDetectorV2:
             wl = max(40, N // 8)
         return ws, wl
 
-    def _log_transform_if_needed(self, s: pd.Series) -> pd.Series:
-        if self.metric_kind == "duration":
-            return np.log1p(s.clip(lower=1e-9))
-        return s
+    def _transform_for_metric_type(self, s: pd.Series, metric_type: str) -> pd.Series:
+        """Transform series according to metric type."""
+        return transform_for_type(s, metric_type)
 
     def _stl_deseasonalize(self, s: pd.Series) -> pd.Series:
         if not self._use_stl or STL is None:
@@ -140,15 +163,38 @@ class UniversalTSDetectorV2:
         except Exception:
             return s
 
+    def _determine_metric_type(self, s: pd.Series) -> str:
+        """Determine metric type (auto-detect or use explicit)."""
+        if self.metric_kind is not None:
+            # Use explicit type
+            return MetricType.from_string(self.metric_kind).value
+
+        if self._auto_detect:
+            # Auto-detect from data
+            hint = self._metric_name_hint
+            detected_type, diagnostics = MetricTypeDetector.detect(s, hint)
+            self._detected_metric_type = detected_type
+            self._detection_diagnostics = diagnostics
+            return detected_type.value
+
+        # Fallback to OTHER if not auto-detecting
+        return MetricType.OTHER.value
+
     def _build_profile_auto(self, s: pd.Series) -> DetectorProfileV2:
-        s = self._log_transform_if_needed(s)
+        # Determine metric type first
+        metric_type = self._determine_metric_type(s)
+        
+        # Transform according to type
+        s_transformed = self._transform_for_metric_type(s, metric_type)
+        
+        # Diagnose characteristics on transformed data (except for regularity on original)
         regularity = self._diagnose_regularity(s)
-        noise_level = self._diagnose_noise_level(s)
-        has_seasonality = self._diagnose_seasonality(s)
+        noise_level = self._diagnose_noise_level(s_transformed)
+        has_seasonality = self._diagnose_seasonality(s_transformed)
         ws, wl = self._choose_windows(len(s))
         smoothing_span = max(2, ws // 2)
         return DetectorProfileV2(
-            metric_kind=self.metric_kind,
+            metric_kind=metric_type,
             direction=self.direction,
             regularity=regularity,
             has_seasonality=has_seasonality,
@@ -163,7 +209,7 @@ class UniversalTSDetectorV2:
         )
 
     def _prepare_signal(self, s: pd.Series, profile: DetectorProfileV2) -> pd.Series:
-        s_tr = self._log_transform_if_needed(s)
+        s_tr = self._transform_for_metric_type(s, profile.metric_kind)
         if profile.use_stl:
             s_tr = self._stl_deseasonalize(s_tr)
         return s_tr
@@ -273,6 +319,14 @@ class UniversalTSDetectorV2:
             "current_point": s_raw.index[-1],
             "current_value": float(s_raw.iloc[-1]),
         }
+        
+        # Add detection info if auto-detected
+        if self._detected_metric_type is not None:
+            result["metric_type_detection"] = {
+                "detected_type": self._detected_metric_type.value,
+                "diagnostics": self._detection_diagnostics,
+                "description": MetricTypeDetector.get_type_description(self._detected_metric_type),
+            }
         if debug:
             result["debug"] = {
                 "raw_series": s_raw,
