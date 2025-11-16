@@ -85,8 +85,6 @@ def test_cli_save_jsonl_and_analyze_from_saved(tmp_path: Path, tmp_config_path: 
         str(tmp_config_path),
         "--path",
         str(out_jsonl),
-        "--fmt",
-        "jsonl",
         cwd=Path.cwd(),
     )
     assert out_jsonl.exists(), f"stdout={cp1.stdout}\nstderr={cp1.stderr}"
@@ -97,8 +95,6 @@ def test_cli_save_jsonl_and_analyze_from_saved(tmp_path: Path, tmp_config_path: 
         str(tmp_config_path),
         "--dataset_path",
         str(out_jsonl),
-        "--fmt",
-        "jsonl",
         cwd=Path.cwd(),
     )
     # stdout should be JSON
@@ -110,6 +106,32 @@ def test_cli_save_jsonl_and_analyze_from_saved(tmp_path: Path, tmp_config_path: 
 def test_cli_analyze_live_outputs_json(tmp_config_path: Path):
     cp = run_cli("analyze_many", "--config", str(tmp_config_path), cwd=Path.cwd())
     data = json.loads(cp.stdout)
+    assert isinstance(data, dict)
+    assert any("current_state" in v for v in data.values())
+
+def test_cli_infers_format_by_extension(tmp_path: Path, tmp_config_path: Path):
+    # Save as .jsonl without passing --fmt; CLI should infer jsonl
+    out_jsonl = tmp_path / "auto.jsonl"
+    cp1 = run_cli(
+        "save_dataset",
+        "--config",
+        str(tmp_config_path),
+        "--path",
+        str(out_jsonl),
+        cwd=Path.cwd(),
+    )
+    assert out_jsonl.exists(), f"stdout={cp1.stdout}\nstderr={cp1.stderr}"
+
+    # Analyze without --fmt; should infer jsonl from extension
+    cp2 = run_cli(
+        "analyze_many",
+        "--config",
+        str(tmp_config_path),
+        "--dataset_path",
+        str(out_jsonl),
+        cwd=Path.cwd(),
+    )
+    data = json.loads(cp2.stdout)
     assert isinstance(data, dict)
     assert any("current_state" in v for v in data.values())
 

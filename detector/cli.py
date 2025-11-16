@@ -56,12 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_save = sub.add_parser("save_dataset", help="Fetch dataset and save to file")
     p_save.add_argument("--config", required=True, help="Path to YAML config")
     p_save.add_argument("--path", required=True, help="Output dataset path (csv/jsonl)")
-    p_save.add_argument(
-        "--fmt",
-        choices=["csv", "jsonl"],
-        default="csv",
-        help="Output format (default: csv)",
-    )
+    p_save.add_argument("--fmt", required=False, help="Output format: csv or jsonl. If omitted, inferred from file extension.")
     p_save.set_defaults(func=cmd_save_dataset)
 
     p_an = sub.add_parser("analyze_many", help="Run analysis")
@@ -71,12 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=False,
         help="Optional path to previously saved dataset (csv/jsonl). If omitted, data will be fetched live.",
     )
-    p_an.add_argument(
-        "--fmt",
-        choices=["csv", "jsonl"],
-        default="csv",
-        help="Dataset format when using --dataset_path (default: csv)",
-    )
+    p_an.add_argument("--fmt", required=False, help="Dataset format: csv or jsonl. If omitted, inferred from file extension.")
     p_an.set_defaults(func=cmd_analyze_many)
 
     return parser

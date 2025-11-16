@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 import yaml
 import pandas as pd
+import os
 
 from .config_schema import DataConfig
 from .adapters import AdapterRegistry
@@ -57,13 +58,23 @@ def run_from_file(path: str) -> Dict[str, Any]:
 
 # ---------- two-phase workflow: fetch → save → analyze ----------
 
-def fetch_dataset_to_file(cfg: DataConfig, output_path: str, fmt: str = "csv") -> str:
+def _infer_format_from_path(file_path: str) -> str:
+    _, ext = os.path.splitext(file_path.lower())
+    # Support .jsonl, .ndjson, .jsonlines
+    if ext in [".jsonl", ".ndjson", ".jsonlines"]:
+        return "jsonl"
+    # Default to csv for anything else
+    return "csv"
+
+def fetch_dataset_to_file(cfg: DataConfig, output_path: str, fmt: Optional[str] = None) -> str:
     """
     Fetch dataset using adapter and save to file.
     fmt: 'csv' or 'jsonl'
     Returns output_path.
     """
     df = load_dataset(cfg)
+    if fmt is None:
+        fmt = _infer_format_from_path(output_path)
     if fmt == "csv":
         df.to_csv(output_path, index=False)
     elif fmt in ("jsonl", "jsonlines", "ndjson"):
@@ -73,10 +84,12 @@ def fetch_dataset_to_file(cfg: DataConfig, output_path: str, fmt: str = "csv") -
     return output_path
 
 
-def analyze_from_saved(cfg: DataConfig, input_path: str, fmt: str = "csv") -> Dict[str, Any]:
+def analyze_from_saved(cfg: DataConfig, input_path: str, fmt: Optional[str] = None) -> Dict[str, Any]:
     """
     Load previously saved dataset and run analysis using config settings.
     """
+    if fmt is None:
+        fmt = _infer_format_from_path(input_path)
     if fmt == "csv":
         df = pd.read_csv(input_path)
     elif fmt in ("jsonl", "jsonlines", "ndjson"):
