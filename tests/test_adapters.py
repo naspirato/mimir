@@ -19,6 +19,9 @@ def test_ydb_registry_optional():
     except ImportError:
         # YDB wrapper not available; acceptable
         assert True
+    except RuntimeError as e:
+        # YDB wrapper present but no local config file available; acceptable in CI
+        assert "Config file not found" in str(e)
 
 
 def test_csv_adapter_loads_examples(tmp_path):

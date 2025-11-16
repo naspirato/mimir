@@ -55,3 +55,34 @@ def run_from_file(path: str) -> Dict[str, Any]:
     return analyze_from_config(cfg)
 
 
+# ---------- two-phase workflow: fetch → save → analyze ----------
+
+def fetch_dataset_to_file(cfg: DataConfig, output_path: str, fmt: str = "csv") -> str:
+    """
+    Fetch dataset using adapter and save to file.
+    fmt: 'csv' or 'jsonl'
+    Returns output_path.
+    """
+    df = load_dataset(cfg)
+    if fmt == "csv":
+        df.to_csv(output_path, index=False)
+    elif fmt in ("jsonl", "jsonlines", "ndjson"):
+        df.to_json(output_path, orient="records", lines=True, date_format="iso")
+    else:
+        raise ValueError("Unsupported format: use 'csv' or 'jsonl'")
+    return output_path
+
+
+def analyze_from_saved(cfg: DataConfig, input_path: str, fmt: str = "csv") -> Dict[str, Any]:
+    """
+    Load previously saved dataset and run analysis using config settings.
+    """
+    if fmt == "csv":
+        df = pd.read_csv(input_path)
+    elif fmt in ("jsonl", "jsonlines", "ndjson"):
+        df = pd.read_json(input_path, orient="records", lines=True)
+    else:
+        raise ValueError("Unsupported format: use 'csv' or 'jsonl'")
+    return analyze_from_config(cfg, df=df)
+
+

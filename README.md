@@ -136,6 +136,25 @@ from detector.run_from_config import run_from_file
 results = run_from_file("configs/example_csv.yaml")
 ```
 
+### Двухэтапный режим: скачать → анализировать
+
+1) Скачивание данных по конфигу и сохранение на диск:
+
+```python
+from detector.run_from_config import load_config, fetch_dataset_to_file
+
+cfg = load_config("configs/example_csv.yaml")
+fetch_dataset_to_file(cfg, "dataset.csv", fmt="csv")  # или fmt=\"jsonl\"
+```
+
+2) Аналитика по сохранённым данным:
+
+```python
+from detector.run_from_config import analyze_from_saved
+
+results = analyze_from_saved(cfg, "dataset.csv", fmt="csv")
+```
+
 ## Подробная документация
 
 См. [RFC_mimir.md](RFC_mimir.md) для полного описания архитектуры и требований.
