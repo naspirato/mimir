@@ -117,6 +117,21 @@ class YDBAdapter(DataAdapter):
             raise ValueError("YDBAdapter requires 'query' in config for load()")
         results = self._wrapper.execute_scan_query(query, query_name=query_name)
         if not results:
+            # Try to extract column names from query for empty DataFrame
+            # This ensures empty DataFrame has correct structure
+            import re
+            # Simple regex to extract column names from SELECT ... FROM
+            # More robust would be SQL parsing, but this covers common cases
+            select_match = re.search(r'SELECT\s+(.*?)\s+FROM', query, re.IGNORECASE | re.DOTALL)
+            if select_match:
+                columns_str = select_match.group(1).strip()
+                # Split by comma, handle newlines and whitespace
+                columns = [col.strip().split()[-1].strip('`"\'') for col in columns_str.split(',')]
+                # Filter out empty strings and handle aliases
+                columns = [col for col in columns if col]
+                if columns:
+                    return pd.DataFrame(columns=columns)
+            # Fallback: return minimal columns
             return pd.DataFrame(columns=[self.timestamp_field, self.value_field])
         # Convert rows to dicts with bytes decoding
         dict_results: List[Dict[str, Any]] = []

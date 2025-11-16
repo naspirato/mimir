@@ -376,6 +376,21 @@ class UniversalTSDetectorV2:
         debug: bool = False,
     ) -> Dict[Any, Dict[str, Any]]:
         df = df.copy()
+        
+        # Validate required fields exist
+        required_fields = [timestamp_field, value_field] + context_fields
+        missing_fields = [f for f in required_fields if f not in df.columns]
+        if missing_fields:
+            raise ValueError(
+                f"Missing required fields in DataFrame: {missing_fields}. "
+                f"Available columns: {list(df.columns)}. "
+                f"Required: {required_fields}"
+            )
+        
+        # Check if DataFrame is empty
+        if len(df) == 0:
+            raise ValueError("DataFrame is empty. Cannot perform analysis.")
+        
         df[timestamp_field] = pd.to_datetime(df[timestamp_field])
         df = df.sort_values(timestamp_field)
         results: Dict[Any, Dict[str, Any]] = {}
