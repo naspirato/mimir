@@ -8,6 +8,78 @@ import pandas as pd
 
 from .base import DataAdapter
 
+
+def _fix_ydb_timestamp(series: pd.Series) -> pd.Series:
+    """
+    Fix YDB timestamp conversion issue where microseconds are interpreted as nanoseconds.
+    
+    YDB returns timestamps in microseconds since epoch, but pandas may interpret
+    them as nanoseconds, resulting in dates in 1970. This function detects and fixes that.
+    """
+    if len(series) == 0:
+        return series
+    
+    # If already datetime, check if incorrectly converted (year < 2000)
+    if pd.api.types.is_datetime64_any_dtype(series):
+        sample = series.iloc[0]
+        if isinstance(sample, pd.Timestamp) and sample.year < 2000:
+            # Incorrectly converted: pandas interpreted microseconds as nanoseconds
+            # Fix: use int64 value as microseconds
+            ns_values = series.astype('int64')
+            return pd.to_datetime(ns_values, unit='us')
+        return series
+    
+    # If numeric, determine unit by value range
+    if pd.api.types.is_numeric_dtype(series):
+        non_null = series.dropna()
+        if len(non_null) == 0:
+            return pd.to_datetime(series, unit='us', errors='coerce')
+        
+        min_val = non_null.min()
+        max_val = non_null.max()
+        
+        # YDB timestamps are typically in microseconds
+        # Range for 2000-2100: ~946684800000000 to ~4102444800000000 microseconds
+        min_reasonable_us = 946684800000000  # 2000-01-01
+        max_reasonable_us = 4102444800000000  # 2100-01-01
+        
+        if min_reasonable_us <= min_val <= max_reasonable_us:
+            # Definitely microseconds
+            result = pd.to_datetime(series, unit='us', errors='coerce')
+            # Double-check: if still wrong, fix it
+            if len(result.dropna()) > 0 and result.dropna().iloc[0].year < 2000:
+                ns_values = series.astype('int64')
+                return pd.to_datetime(ns_values, unit='us', errors='coerce')
+            return result
+        elif 946684800000 <= min_val <= 4102444800000:
+            # Milliseconds range
+            return pd.to_datetime(series, unit='ms', errors='coerce')
+        elif 946684800 <= min_val <= 4102444800:
+            # Seconds range
+            return pd.to_datetime(series, unit='s', errors='coerce')
+        else:
+            # Try microseconds first (YDB default), fallback to auto
+            try:
+                result = pd.to_datetime(series, unit='us', errors='coerce')
+                if len(result.dropna()) > 0 and result.dropna().iloc[0].year < 2000:
+                    ns_values = series.astype('int64')
+                    return pd.to_datetime(ns_values, unit='us', errors='coerce')
+                return result
+            except Exception:
+                return pd.to_datetime(series, errors='coerce')
+    
+    # String or other: use default conversion
+    result = pd.to_datetime(series, errors='coerce')
+    # Check if conversion resulted in 1970 dates (wrong interpretation)
+    if len(result.dropna()) > 0 and result.dropna().iloc[0].year < 2000:
+        # Try to extract numeric values and interpret as microseconds
+        try:
+            numeric = pd.to_numeric(series, errors='coerce')
+            return pd.to_datetime(numeric, unit='us', errors='coerce')
+        except Exception:
+            pass
+    return result
+
 try:
     # Expect a module utils/ydb_wrapper.py in project (provided by user env)
     from ..utils.ydb_wrapper import YDBWrapper  # type: ignore
@@ -55,9 +127,9 @@ class YDBAdapter(DataAdapter):
                     row_dict[k] = bytes(v).decode("utf-8")
             dict_results.append(row_dict)
         df = pd.DataFrame(dict_results)
-        # Best-effort timestamp parsing
-        if self.timestamp_field in df.columns:
-            df[self.timestamp_field] = pd.to_datetime(df[self.timestamp_field], errors="coerce")
+        # Fix YDB timestamp conversion (microseconds vs nanoseconds issue)
+        if self.timestamp_field in df.columns and len(df) > 0:
+            df[self.timestamp_field] = _fix_ydb_timestamp(df[self.timestamp_field])
         if self.value_field not in df.columns:
             raise ValueError(f"YDBAdapter: value_field '{self.value_field}' not found in query result")
         return df

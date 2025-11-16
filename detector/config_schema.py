@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DatasetConfig(BaseModel):
     adapter: Literal["csv", "http_json", "ydb"]
     adapter_config: Dict[str, Any] = Field(default_factory=dict)
     timestamp_field: str = "timestamp"
-    value_field: str = "value"
+    value_field: Optional[str] = None  # Single metric field (legacy)
+    value_fields: Optional[List[str]] = None  # Multiple metric fields (preferred)
+    
+    @model_validator(mode='after')
+    def validate_value_fields(self):
+        """Ensure at least one of value_field or value_fields is specified"""
+        if self.value_field is None and (self.value_fields is None or len(self.value_fields) == 0):
+            raise ValueError("Either 'value_field' or 'value_fields' must be specified")
+        return self
 
 
 class MetricsConfig(BaseModel):

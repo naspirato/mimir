@@ -1,84 +1,377 @@
 {% extends "base.html" %}
+
 {% block content %}
-<section>
-  <h4>Results</h4>
-  <p><strong>Config:</strong> {{ config_path }}</p>
-  {% if saved_path %}<p><strong>Dataset:</strong> {{ saved_path }}</p>{% endif %}
-</section>
+<div class="step">
+  <div class="step-header">
+    <span class="step-number completed">✓</span>
+    <h2 class="step-title">Analysis Results</h2>
+  </div>
+  <div class="step-content">
+    <div style="margin-bottom: 1rem; font-size: 13px;">
+      <p style="margin: 0 0 0.25rem 0;"><strong>Config:</strong> <code style="font-size: 12px;">{{ config_path }}</code></p>
+      {% if saved_path %}<p style="margin: 0;"><strong>Dataset:</strong> <code style="font-size: 12px;">{{ saved_path }}</code></p>{% endif %}
+    </div>
 
-<section>
-  <h5>Contexts</h5>
-  {% if table_records and table_records|length > 0 %}
-  <table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>context</th>
-        <th>state</th>
-        <th>risk</th>
-        <th>z_score</th>
-        <th>rel_change</th>
-        <th>change_point</th>
-        <th>plots</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in table_records %}
-      <tr>
-        <td>{{ loop.index }}</td>
-        <td><code>{{ row.context }}</code></td>
-        <td>{{ row.state }}</td>
-        <td>{{ row.risk }}</td>
-        <td>{{ row.z_score }}</td>
-        <td>{{ row.rel_change }}</td>
-        <td>{{ row.change_point }}</td>
-        <td>
-          <a href="#" onclick='loadPlots({{ row.context_json | safe }}); return false;'>open</a>
-        </td>
-      </tr>
+    {% if grouped_results and grouped_results|length > 0 %}
+      {% set metric_counts = [] %}
+      {% for group in grouped_results %}
+        {% set _ = metric_counts.append(group.metrics|length) %}
       {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p>No contexts with enough points.</p>
-  {% endif %}
-</section>
+      {% set total_metrics = metric_counts|sum %}
+      <div style="margin-bottom: 0.5rem; font-size: 13px; color: var(--pico-muted-color);">
+        Found {{ grouped_results|length }} context{{ 's' if grouped_results|length != 1 else '' }} with {{ total_metrics }} metric{{ 's' if total_metrics != 1 else '' }}
+      </div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 40px;">#</th>
+              <th>Context</th>
+              <th>Metric</th>
+              <th>State</th>
+              <th>Risk</th>
+              <th>Z-Score</th>
+              <th>Rel Change</th>
+              <th>Change Point</th>
+              <th style="width: 80px;">View</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set row_num = 0 %}
+            {% for group in grouped_results %}
+              {% set group_idx = loop.index0 %}
+              {% for metric in group.metrics %}
+                {% set metric_idx = loop.index0 %}
+                {% set row_id = 'g' + group_idx|string + '-m' + metric_idx|string %}
+                {% set row_num = row_num + 1 %}
+                <tr id="metric-row-{{ row_id }}" class="metric-row">
+                  <td>
+                    {% if metric_idx == 0 %}
+                      <strong style="color: var(--pico-muted-color);">{{ group_idx + 1 }}</strong>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if metric_idx == 0 %}
+                      <code style="font-size: 11px;">{{ group.group_context_str }}</code>
+                    {% endif %}
+                  </td>
+                  <td><code style="font-size: 11px;">{{ metric.metric_name }}</code></td>
+                  <td>
+                    {% if metric.state == 'regression' %}
+                      <span style="color: #dc2626; font-weight: 500;">{{ metric.state }}</span>
+                    {% elif metric.state == 'improvement' %}
+                      <span style="color: #16a34a; font-weight: 500;">{{ metric.state }}</span>
+                    {% else %}
+                      {{ metric.state }}
+                    {% endif %}
+                  </td>
+                  <td>{{ "%.3f"|format(metric.risk) }}</td>
+                  <td>{{ "%.2f"|format(metric.z_score) }}</td>
+                  <td>{{ "%.2f%%"|format(metric.rel_change * 100) }}</td>
+                  <td style="font-size: 12px;">{{ metric.change_point if metric.change_point else '—' }}</td>
+                  <td>
+                    <a href="#" onclick='togglePlots("{{ row_id }}", {{ metric.context_json | safe }}); return false;' class="context-link">Open</a>
+                  </td>
+                </tr>
+                <tr id="plots-row-{{ row_id }}" class="plots-row" style="display: none;">
+                  <td colspan="9" style="padding: 1.5rem 0;">
+                    <div style="margin-bottom: 2rem;">
+                      <h4 style="margin: 0 0 0.75rem 0; font-size: 14px; font-weight: 600;">Time Series: Raw Values and Trends</h4>
+                      <div id="main_plot-{{ row_id }}" style="min-height: 450px;"></div>
+                      <div style="margin-top: 1rem; padding: 0.75rem; background: #f3f4f6; border-radius: 4px; font-size: 12px; line-height: 1.6;">
+                        <strong>Как интерпретировать:</strong>
+                        <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+                          <li><strong>Raw values</strong> (серый) — исходные значения метрики во времени</li>
+                          <li><strong>Signal</strong> (синий) — значения после лог-трансформации и удаления сезонности (STL decomposition)</li>
+                          <li><strong>Short-term trend</strong> (зеленый) — краткосрочный тренд, экспоненциально взвешенное скользящее среднее с коротким окном</li>
+                          <li><strong>Long-term trend</strong> (красный) — долгосрочный тренд, EWMA с длинным окном</li>
+                        </ul>
+                        <p style="margin: 0.75rem 0 0 0;"><strong>Интерпретация:</strong> Если зеленая линия (short) значительно выше красной (long) — это может указывать на улучшение метрики. Если ниже — на регрессию. Красная вертикальная линия (если есть) показывает момент обнаруженного изменения (change point).</p>
+                      </div>
+                    </div>
+                    <div style="margin-bottom: 2rem;">
+                      <h4 style="margin: 0 0 0.75rem 0; font-size: 14px; font-weight: 600;">Diagnostics: Z-score, Relative Change, and CUSUM</h4>
+                      <div id="diag_plot-{{ row_id }}" style="min-height: 450px;"></div>
+                      <div style="margin-top: 1rem; padding: 0.75rem; background: #f3f4f6; border-radius: 4px; font-size: 12px; line-height: 1.6;">
+                        <strong>Как интерпретировать:</strong>
+                        <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+                          <li><strong>Z-score (robust)</strong> (синий, левая ось) — robust Z-score, показывает насколько текущее относительное изменение отклоняется от медианы. |z| &lt; 0.8 → стабильно, |z| &gt; 0.8 → регрессия или улучшение</li>
+                          <li><strong>Relative change</strong> (фиолетовый, правая ось) — относительное изменение: (short-term - long-term) / long-term. Показывает процент изменения краткосрочного тренда относительно долгосрочного</li>
+                          <li><strong>CUSUM positive</strong> (зеленый, левая ось) — накопительная сумма положительных отклонений от медианы. Рост указывает на устойчивое улучшение</li>
+                          <li><strong>CUSUM negative</strong> (красный, левая ось) — накопительная сумма отрицательных отклонений. Падение (более отрицательные значения) указывает на устойчивую регрессию</li>
+                        </ul>
+                        <p style="margin: 0.75rem 0 0 0;"><strong>Интерпретация:</strong> Положительный Z-score и растущий CUSUM positive указывают на улучшение. Отрицательный Z-score и падающий CUSUM negative — на регрессию. Чем больше абсолютное значение Z-score, тем сильнее отклонение от нормы.</p>
+                      </div>
+                    </div>
+                    <details>
+                      <summary style="cursor: pointer; font-size: 14px; font-weight: 500;">Details (JSON)</summary>
+                      <pre id="details-{{ row_id }}" style="margin-top: 0.75rem; padding: 0.75rem; background: #f3f4f6; border-radius: 4px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;"></pre>
+                    </details>
+                  </td>
+                </tr>
+              {% endfor %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% elif table_records and table_records|length > 0 %}
+      <div style="margin-bottom: 0.5rem; font-size: 13px; color: var(--pico-muted-color);">
+        Found {{ table_records|length }} context{{ 's' if table_records|length != 1 else '' }}
+      </div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <th style="width: 40px;">#</th>
+            <th>Context</th>
+            <th>State</th>
+            <th>Risk</th>
+            <th>Z-Score</th>
+            <th>Rel Change</th>
+            <th>Change Point</th>
+            <th style="width: 80px;">View</th>
+          </tr>
+          </thead>
+          <tbody>
+            {% for row in table_records %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><code style="font-size: 11px;">{{ row.context }}</code></td>
+              <td>
+                {% if row.state == 'regression' %}
+                  <span style="color: #dc2626; font-weight: 500;">{{ row.state }}</span>
+                {% elif row.state == 'improvement' %}
+                  <span style="color: #16a34a; font-weight: 500;">{{ row.state }}</span>
+                {% else %}
+                  {{ row.state }}
+                {% endif %}
+              </td>
+              <td>{{ "%.3f"|format(row.risk) }}</td>
+              <td>{{ "%.2f"|format(row.z_score) }}</td>
+              <td>{{ "%.2f%%"|format(row.rel_change * 100) }}</td>
+              <td style="font-size: 12px;">{{ row.change_point if row.change_point else '—' }}</td>
+              <td>
+                <a href="#" onclick='loadPlots({{ row.context_json | safe }}); return false;' class="context-link">Open</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p style="color: var(--pico-muted-color);">No contexts with enough data points for analysis.</p>
+    {% endif %}
 
-<section id="plots" style="display:none;">
-  <h5>Charts</h5>
-  <div id="main_plot"></div>
-  <div id="diag_plot"></div>
-  <pre id="details" style="white-space: pre-wrap;"></pre>
-</section>
+    <div class="action-buttons" style="margin-top: 1.5rem;">
+      <a href="{{ url_for('index', config=config_path) }}" role="button" class="secondary">New Analysis</a>
+    </div>
+  </div>
+</div>
 
-<p><a href="{{ url_for('index', config=config_path) }}">Back</a></p>
+<!-- Legacy plots section for backward compatibility (hidden by default) -->
+<div id="plots-section" style="display: none;">
+  <h3 style="margin: 0 0 1rem 0; font-size: 16px;">Charts & Details</h3>
+  
+  <div style="margin-bottom: 2rem;">
+    <h4 style="margin: 0 0 0.75rem 0; font-size: 14px; font-weight: 600;">Time Series: Raw Values and Trends</h4>
+    <div id="main_plot" style="margin-bottom: 0; min-height: 450px;"></div>
+    <div style="margin-top: 1rem; padding: 0.75rem; background: #f3f4f6; border-radius: 4px; font-size: 12px; line-height: 1.6;">
+      <strong>Как интерпретировать:</strong>
+      <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+        <li><strong>Raw values</strong> (серый) — исходные значения метрики во времени</li>
+        <li><strong>Signal</strong> (синий) — значения после лог-трансформации и удаления сезонности (STL decomposition)</li>
+        <li><strong>Short-term trend</strong> (зеленый) — краткосрочный тренд, экспоненциально взвешенное скользящее среднее с коротким окном</li>
+        <li><strong>Long-term trend</strong> (красный) — долгосрочный тренд, EWMA с длинным окном</li>
+      </ul>
+      <p style="margin: 0.75rem 0 0 0;"><strong>Интерпретация:</strong> Если зеленая линия (short) значительно выше красной (long) — это может указывать на улучшение метрики. Если ниже — на регрессию. Красная вертикальная линия (если есть) показывает момент обнаруженного изменения (change point).</p>
+    </div>
+  </div>
+  
+  <div style="margin-bottom: 2rem;">
+    <h4 style="margin: 0 0 0.75rem 0; font-size: 14px; font-weight: 600;">Diagnostics: Z-score, Relative Change, and CUSUM</h4>
+    <div id="diag_plot" style="margin-bottom: 0; min-height: 450px;"></div>
+    <div style="margin-top: 1rem; padding: 0.75rem; background: #f3f4f6; border-radius: 4px; font-size: 12px; line-height: 1.6;">
+      <strong>Как интерпретировать:</strong>
+      <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+        <li><strong>Z-score (robust)</strong> (синий, левая ось) — robust Z-score, показывает насколько текущее относительное изменение отклоняется от медианы. |z| &lt; 0.8 → стабильно, |z| &gt; 0.8 → регрессия или улучшение</li>
+        <li><strong>Relative change</strong> (фиолетовый, правая ось) — относительное изменение: (short-term - long-term) / long-term. Показывает процент изменения краткосрочного тренда относительно долгосрочного</li>
+        <li><strong>CUSUM positive</strong> (зеленый, левая ось) — накопительная сумма положительных отклонений от медианы. Рост указывает на устойчивое улучшение</li>
+        <li><strong>CUSUM negative</strong> (красный, левая ось) — накопительная сумма отрицательных отклонений. Падение (более отрицательные значения) указывает на устойчивую регрессию</li>
+      </ul>
+      <p style="margin: 0.75rem 0 0 0;"><strong>Интерпретация:</strong> Положительный Z-score и растущий CUSUM positive указывают на улучшение. Отрицательный Z-score и падающий CUSUM negative — на регрессию. Чем больше абсолютное значение Z-score, тем сильнее отклонение от нормы.</p>
+    </div>
+  </div>
+  
+  <details>
+    <summary style="cursor: pointer; font-size: 14px; font-weight: 500;">Details (JSON)</summary>
+    <pre id="details" style="margin-top: 0.75rem; padding: 0.75rem; background: #f3f4f6; border-radius: 4px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;"></pre>
+  </details>
+</div>
 
 <script>
-  async function loadPlots(ctx) {
-    // ctx is a JSON object (context dict). Send it as encoded JSON string.
-    const ctxParam = encodeURIComponent(JSON.stringify(ctx));
-    const params = new URLSearchParams({
-      config_path: "{{ config_path }}",
-      ctx: ctxParam
-      {% if saved_path %}, saved_path: "{{ saved_path }}"{% endif %}
-    });
-    const resp = await fetch("/context_plot?" + params.toString());
-    if (!resp.ok) {
-      alert("Failed to load plots");
+  const CONFIG_PATH = "{{ config_path }}";
+  const SAVED_PATH = {% if saved_path %}"{{ saved_path }}"{% else %}null{% endif %};
+
+  // Toggle plots for grouped table view
+  async function togglePlots(rowId, ctx) {
+    const plotsRow = document.getElementById('plots-row-' + rowId);
+    const metricRow = document.getElementById('metric-row-' + rowId);
+    
+    if (!plotsRow || !metricRow) {
+      console.error('Plot elements not found for row:', rowId);
       return;
     }
-    const data = await resp.json();
-    document.getElementById('plots').style.display = 'block';
-    Plotly.newPlot('main_plot', data.main.data, data.main.layout, {responsive: true});
-    Plotly.newPlot('diag_plot', data.diag.data, data.diag.layout, {responsive: true});
-    document.getElementById('details').textContent = JSON.stringify({
-      state: data.state,
-      detector_result: data.detector_result,
-      meta_last: data.meta_last,
-      context: data.context
-    }, null, 2);
+    
+    // If already visible, close it
+    if (plotsRow.style.display !== 'none') {
+      plotsRow.style.display = 'none';
+      return;
+    }
+    
+    // Close all other plots first
+    document.querySelectorAll('.plots-row').forEach(row => {
+      row.style.display = 'none';
+    });
+    
+    // Show this plot row
+    plotsRow.style.display = 'table-row';
+    plotsRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    
+    // Get plot containers for this row
+    const mainPlotId = 'main_plot-' + rowId;
+    const diagPlotId = 'diag_plot-' + rowId;
+    const detailsId = 'details-' + rowId;
+    
+    const mainPlot = document.getElementById(mainPlotId);
+    const diagPlot = document.getElementById(diagPlotId);
+    const details = document.getElementById(detailsId);
+    
+    if (!mainPlot || !diagPlot || !details) {
+      console.error('Plot containers not found for row:', rowId);
+      return;
+    }
+    
+    // Show loading state with spinner
+    mainPlot.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--pico-muted-color);"><span class="loading-spinner" style="width: 32px; height: 32px; border-width: 3px; margin-bottom: 0.5rem; display: inline-block;"></span><p style="margin-top: 0.5rem;">Loading charts...</p></div>';
+    diagPlot.innerHTML = '';
+    details.textContent = '';
+    
+    // Build URL params
+    const params = new URLSearchParams({
+      config_path: CONFIG_PATH,
+      ctx: JSON.stringify(ctx)
+    });
+    
+    if (SAVED_PATH) {
+      params.append('saved_path', SAVED_PATH);
+    }
+    
+    const url = "/context_plot?" + params.toString();
+    console.log('Fetching from:', url);
+    
+    try {
+      const resp = await fetch(url);
+      console.log('Response status:', resp.status, resp.statusText);
+      
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        console.error('Error response:', errorText);
+        throw new Error(`HTTP ${resp.status}: ${errorText}`);
+      }
+      
+      const data = await resp.json();
+      console.log('Received data:', data);
+      
+      if (!data.main || !data.diag) {
+        throw new Error('Invalid response format: missing plot data');
+      }
+      
+      Plotly.newPlot(mainPlotId, data.main.data, data.main.layout, {responsive: true, displayModeBar: true});
+      Plotly.newPlot(diagPlotId, data.diag.data, data.diag.layout, {responsive: true, displayModeBar: true});
+      details.textContent = JSON.stringify({
+        state: data.state,
+        detector_result: data.detector_result,
+        meta_last: data.meta_last,
+        context: data.context
+      }, null, 2);
+    } catch (error) {
+      console.error('Error loading plots:', error);
+      const errorMsg = error.message || 'Unknown error';
+      mainPlot.innerHTML = '<p style="text-align: center; color: #dc2626; padding: 1rem;">Error loading charts: ' + errorMsg + '</p><p style="text-align: center; font-size: 12px; color: var(--pico-muted-color);">Check browser console for details.</p>';
+    }
+  }
+
+  // Legacy function for backward compatibility
+  async function loadPlots(ctx) {
+    console.log('loadPlots called with context:', ctx);
+    
+    const plotsSection = document.getElementById('plots-section');
+    if (!plotsSection) {
+      console.error('plots-section element not found');
+      alert('Error: plots section not found');
+      return;
+    }
+    
+    plotsSection.style.display = 'block';
+    plotsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    
+    // Show loading state
+    const mainPlot = document.getElementById('main_plot');
+    const diagPlot = document.getElementById('diag_plot');
+    const details = document.getElementById('details');
+    
+    if (!mainPlot || !diagPlot || !details) {
+      console.error('Plot elements not found');
+      alert('Error: plot containers not found');
+      return;
+    }
+    
+    mainPlot.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--pico-muted-color);"><span class="loading-spinner" style="width: 32px; height: 32px; border-width: 3px; margin-bottom: 0.5rem; display: inline-block;"></span><p style="margin-top: 0.5rem;">Loading charts...</p></div>';
+    diagPlot.innerHTML = '';
+    details.textContent = '';
+    
+    // URLSearchParams automatically encodes values, so don't double-encode
+    const params = new URLSearchParams({
+      config_path: CONFIG_PATH,
+      ctx: JSON.stringify(ctx)  // URLSearchParams will encode this automatically
+    });
+    
+    if (SAVED_PATH) {
+      params.append('saved_path', SAVED_PATH);
+    }
+    
+    const url = "/context_plot?" + params.toString();
+    console.log('Fetching from:', url);
+    
+    try {
+      const resp = await fetch(url);
+      console.log('Response status:', resp.status, resp.statusText);
+      
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        console.error('Error response:', errorText);
+        throw new Error(`HTTP ${resp.status}: ${errorText}`);
+      }
+      
+      const data = await resp.json();
+      console.log('Received data:', data);
+      
+      if (!data.main || !data.diag) {
+        throw new Error('Invalid response format: missing plot data');
+      }
+      
+      Plotly.newPlot('main_plot', data.main.data, data.main.layout, {responsive: true, displayModeBar: true});
+      Plotly.newPlot('diag_plot', data.diag.data, data.diag.layout, {responsive: true, displayModeBar: true});
+      details.textContent = JSON.stringify({
+        state: data.state,
+        detector_result: data.detector_result,
+        meta_last: data.meta_last,
+        context: data.context
+      }, null, 2);
+    } catch (error) {
+      console.error('Error loading plots:', error);
+      const errorMsg = error.message || 'Unknown error';
+      mainPlot.innerHTML = '<p style="text-align: center; color: #dc2626; padding: 1rem;">Error loading charts: ' + errorMsg + '</p><p style="text-align: center; font-size: 12px; color: var(--pico-muted-color);">Check browser console for details.</p>';
+    }
   }
 </script>
 {% endblock %}
-
-

@@ -1,39 +1,46 @@
 {% extends "base.html" %}
+
 {% block content %}
-<section>
-  <h4>Fetched dataset</h4>
-  <p><strong>Config:</strong> {{ config_path }}</p>
-  <p><strong>Format:</strong> {{ fmt }}</p>
-  <p><strong>Saved to:</strong> {{ saved_path }}</p>
-</section>
-
-<section>
-  <h5>Preview (first 50 rows)</h5>
-  {% if preview_records and preview_records|length > 0 %}
-  <table>
-    <thead>
-      <tr>
-        {% for k in preview_records[0].keys() %}
-          <th>{{ k }}</th>
-        {% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in preview_records %}
-      <tr>
-        {% for v in row.values() %}
-          <td>{{ v }}</td>
-        {% endfor %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p>No preview available.</p>
-  {% endif %}
-</section>
-
-<p><a href="{{ url_for('index', config=config_path) }}">Back</a></p>
+<div class="step">
+  <div class="step-header">
+    <span class="step-number completed">✓</span>
+    <h2 class="step-title">Dataset Fetched</h2>
+  </div>
+  <div class="step-content">
+    <div style="margin-bottom: 1rem;">
+      <p style="margin: 0 0 0.5rem 0;"><strong>Config:</strong> <code style="font-size: 12px;">{{ config_path }}</code></p>
+      <p style="margin: 0 0 0.5rem 0;"><strong>Format:</strong> {{ fmt | upper }}</p>
+      <p style="margin: 0;"><strong>Saved to:</strong> <code style="font-size: 12px;">{{ saved_path }}</code></p>
+    </div>
+    {% if preview_records and preview_records|length > 0 %}
+      <details style="margin-top: 1rem;">
+        <summary style="cursor: pointer; font-size: 14px; font-weight: 500;">Preview (first {{ preview_records|length }} rows)</summary>
+        <div style="margin-top: 0.75rem; overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                {% for k in preview_records[0].keys() %}
+                  <th>{{ k }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in preview_records %}
+              <tr>
+                {% for v in row.values() %}
+                  <td style="font-size: 12px;">{{ v }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    {% endif %}
+    <div class="action-buttons" style="margin-top: 1.5rem;">
+      <a href="{{ url_for('index', config=config_path, saved_path=saved_path) }}" role="button">Continue to Analysis</a>
+      <a href="{{ url_for('index', config=config_path) }}" role="button" class="secondary">Back</a>
+    </div>
+  </div>
+</div>
 {% endblock %}
-
-

@@ -1,0 +1,41 @@
+version: 1
+
+dataset:
+  adapter: ydb
+  adapter_config:
+    wrapper_kwargs:
+      config_path: detector/config/ydb_qa_config.json
+      enable_statistics: true
+    query: |
+      SELECT 
+        timestamp,
+        cluster,
+        warehouses,
+        duration_seconds,
+        git_branch,
+        version,
+        run_type,
+        tpmC
+      FROM `perfomance/tpcc`
+      WHERE timestamp >= CurrentUtcDate() - 180 * Interval("P1D")
+      
+    query_name: tpcc_performance_explicit
+  timestamp_field: timestamp
+  value_field: tpmC
+
+analysis:
+  # Группируем ряды по окружению (без metric_name, так как только одна метрика)
+  context_fields: [cluster, warehouses, git_branch, run_type]
+  meta_fields: [version]
+  metrics:
+    name: tpcc_performance_explicit
+    # Явно указанные метрики (без auto-detection)
+    # tpmC - throughput (higher_is_better), latency - duration (lower_is_better)
+    # Используем общий тип "other" с направленностью higher_is_better
+    direction: higher_is_better
+    metric_kind: other
+    auto_detect_metric_type: false
+  event_types: [regression, improvement]
+  output:
+    debug: false
+

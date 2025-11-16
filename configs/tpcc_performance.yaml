@@ -14,31 +14,18 @@ dataset:
         duration_seconds,
         git_branch,
         run_type,
-        tpmC as metric_value,
-        'tpmC' as metric_name
+        tpmC,
+        newOrderLatency90
       FROM `perfomance/tpcc`
       WHERE timestamp >= CurrentUtcDate() - 180 * Interval("P1D")
-      
-      UNION ALL
-      
-      SELECT 
-        timestamp,
-        cluster,
-        warehouses,
-        duration_seconds,
-        git_branch,
-        run_type,
-        newOrderLatency90 as metric_value,
-        'newOrderLatency90' as metric_name
-      FROM `perfomance/tpcc`
-      WHERE timestamp >= CurrentUtcDate() - 180 * Interval("P1D")
-        AND newOrderLatency90 IS NOT NULL;
+        AND (tpmC IS NOT NULL OR newOrderLatency90 IS NOT NULL);
     query_name: tpcc_performance_analysis
   timestamp_field: timestamp
-  value_field: metric_value
+  value_fields: [tpmC, newOrderLatency90]
 
 analysis:
   # Группируем ряды по окружению и типу метрики
+  # metric_name автоматически добавляется при трансформации value_fields
   context_fields: [cluster, warehouses, git_branch, run_type, metric_name]
   meta_fields: []
   metrics:

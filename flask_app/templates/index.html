@@ -1,59 +1,127 @@
 {% extends "base.html" %}
+
 {% block content %}
-<section>
-  <h4>1) Choose config</h4>
-  <form method="get" action="{{ url_for('index') }}">
-    <label>
-      Config
-      <select name="config">
-        {% for path, s in configs.items() %}
-          <option value="{{ path }}" {% if path == selected %}selected{% endif %}>{{ path }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
-      Save format
-      <select name="fmt">
-        <option value="csv" {% if fmt == 'csv' %}selected{% endif %}>csv</option>
-        <option value="jsonl" {% if fmt == 'jsonl' %}selected{% endif %}>jsonl</option>
-      </select>
-    </label>
-    <button type="submit">Apply</button>
-  </form>
-</section>
-
-{% if selected %}
-<section>
-  <h4>2) Fetch dataset</h4>
-  <form method="post" action="{{ url_for('fetch') }}">
-    <input type="hidden" name="config_path" value="{{ selected }}">
-    <input type="hidden" name="fmt" value="{{ fmt }}">
-    <label>
-      Output path
-      <input type="text" name="out_path" value="{{ default_out }}">
-    </label>
-    <button type="submit" class="contrast">Fetch</button>
-  </form>
-</section>
-
-<section>
-  <h4>3) Analyze</h4>
-  <div class="grid">
-    <form method="post" action="{{ url_for('analyze_live_route') }}">
-      <input type="hidden" name="config_path" value="{{ selected }}">
-      <button type="submit">Analyze live</button>
-    </form>
-    <form method="post" action="{{ url_for('analyze_saved_route') }}">
-      <input type="hidden" name="config_path" value="{{ selected }}">
-      <label>
-        Saved dataset path
-        <input type="text" name="dataset_path" value="{{ saved_path or default_out }}">
-      </label>
-      <button type="submit">Analyze from saved</button>
+<!-- Step 1: Select Config -->
+<div class="step">
+  <div class="step-header">
+    <span class="step-number {% if selected %}completed{% endif %}">1</span>
+    <h2 class="step-title">Select Configuration</h2>
+  </div>
+  <div class="step-content">
+    <form method="get" action="{{ url_for('index') }}" style="margin: 0;">
+      <div class="form-group">
+        <label for="config">Config file:</label>
+        <select name="config" id="config" onchange="this.form.submit()">
+          {% for path, s in configs.items() %}
+            <option value="{{ path }}" {% if path == selected %}selected{% endif %}>{{ path }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if selected %}
+        <div style="margin-top: 0.75rem; padding: 0.75rem; background: #f3f4f6; border-radius: 4px; font-size: 13px;">
+          <strong>Adapter:</strong> {{ configs[selected].adapter }}<br>
+          <strong>Context fields:</strong> {{ configs[selected].context_fields | join(', ') }}<br>
+          <strong>Metric:</strong>
+          {% if configs[selected].auto_detect_metric_type %}
+            Auto-detection enabled
+            {% if configs[selected].metric_name %}(hint: {{ configs[selected].metric_name }}){% endif %}
+          {% else %}
+            {% if configs[selected].metric_name %}{{ configs[selected].metric_name }}{% else %}—{% endif %}
+            {% if configs[selected].metric_kind %}({{ configs[selected].metric_kind }}){% endif %}
+          {% endif %}
+          {% if configs[selected].metric_direction %}<br><strong>Direction:</strong> {{ configs[selected].metric_direction }}{% endif %}
+        </div>
+      {% endif %}
     </form>
   </div>
-</section>
+</div>
+
+{% if selected %}
+<!-- Step 2: Fetch Dataset (Optional) -->
+<div class="step">
+  <div class="step-header">
+    <span class="step-number {% if saved_path %}completed{% endif %}">2</span>
+    <h2 class="step-title">Fetch Dataset <span style="font-size: 12px; font-weight: normal; color: var(--pico-muted-color);">(Optional)</span></h2>
+  </div>
+  <div class="step-content">
+    {% if saved_path %}
+      <div style="margin-bottom: 0.75rem;">
+        <span class="status-badge success">Dataset saved</span>
+        <span style="margin-left: 0.5rem; font-size: 13px; color: var(--pico-muted-color);">{{ saved_path }}</span>
+      </div>
+      <p style="margin: 0; font-size: 13px;"><a href="{{ url_for('index', config=selected, saved_path=saved_path) }}">Use saved dataset</a> or fetch new data:</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('fetch') }}" id="fetch-form" style="margin-top: 0.75rem;" onsubmit="setLoading(this, 'fetch-btn'); return true;">
+      <input type="hidden" name="config_path" value="{{ selected }}">
+      <div class="form-group">
+        <label for="fmt">Format:</label>
+        <select name="fmt" id="fmt">
+          <option value="csv" {% if fmt == 'csv' %}selected{% endif %}>CSV</option>
+          <option value="jsonl" {% if fmt == 'jsonl' %}selected{% endif %}>JSONL</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="out_path">Save path:</label>
+        <input type="text" name="out_path" id="out_path" value="{{ default_out }}" style="font-family: monospace; font-size: 12px;">
+      </div>
+      <div class="action-buttons">
+        <button type="submit" id="fetch-btn" class="contrast">Fetch & Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Step 3: Run Analysis -->
+<div class="step">
+  <div class="step-header">
+    <span class="step-number">3</span>
+    <h2 class="step-title">Run Analysis</h2>
+  </div>
+  <div class="step-content">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+      <div style="padding: 1rem; border: 1px solid var(--pico-muted-border-color); border-radius: 4px;">
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 14px; font-weight: 600;">Analyze Live</h3>
+        <p style="margin: 0 0 0.75rem 0; font-size: 12px; color: var(--pico-muted-color);">Fetch data and analyze immediately</p>
+        <form method="post" action="{{ url_for('analyze_live_route') }}" id="analyze-live-form" style="margin: 0;" onsubmit="setLoading(this, 'analyze-live-btn'); return true;">
+          <input type="hidden" name="config_path" value="{{ selected }}">
+          <button type="submit" id="analyze-live-btn" style="width: 100%;">Run Live Analysis</button>
+        </form>
+      </div>
+      <div style="padding: 1rem; border: 1px solid var(--pico-muted-border-color); border-radius: 4px;">
+        <h3 style="margin: 0 0 0.5rem 0; font-size: 14px; font-weight: 600;">Analyze Saved</h3>
+        <p style="margin: 0 0 0.75rem 0; font-size: 12px; color: var(--pico-muted-color);">Analyze from previously saved dataset</p>
+        <form method="post" action="{{ url_for('analyze_saved_route') }}" id="analyze-saved-form" style="margin: 0;" onsubmit="setLoading(this, 'analyze-saved-btn'); return true;">
+          <input type="hidden" name="config_path" value="{{ selected }}">
+          <div class="form-group" style="margin-bottom: 0.75rem;">
+            <label for="dataset_path" style="font-size: 12px;">Dataset path:</label>
+            <input type="text" name="dataset_path" id="dataset_path" value="{{ saved_path or default_out }}" style="font-family: monospace; font-size: 12px;">
+          </div>
+          <button type="submit" id="analyze-saved-btn" class="secondary" style="width: 100%;">Run Analysis</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 {% endif %}
+
+<script>
+  function setLoading(form, buttonId) {
+    const formEl = form;
+    const button = document.getElementById(buttonId);
+    if (!button || button.disabled) return;
+    
+    // Add loading class to form
+    formEl.classList.add('loading');
+    
+    // Disable button and show spinner
+    button.disabled = true;
+    const originalText = button.textContent || button.innerText;
+    button.innerHTML = '<span class="loading-spinner"></span>' + originalText;
+  }
+  
+  // Prevent form resubmission on refresh
+  if (window.history.replaceState) {
+    window.history.replaceState(null, null, window.location.href);
+  }
+</script>
 {% endblock %}
-
-

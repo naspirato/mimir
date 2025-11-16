@@ -215,8 +215,16 @@ class UniversalTSDetectorV2:
         return s_tr
 
     def _rolling_stats(self, x: pd.Series, ws: int, wl: int):
+        # Input x is already cleaned (dropna in _to_series)
+        # EWMA may have NaN in the first few values due to insufficient history
+        # Fill with forward fill to preserve series length
         short = x.ewm(span=ws, adjust=False).mean()
         long = x.ewm(span=wl, adjust=False).mean()
+        # Fill any leading NaN with first valid value (bfill + ffill)
+        if short.isna().any():
+            short = short.bfill().ffill().fillna(0)
+        if long.isna().any():
+            long = long.bfill().ffill().fillna(0)
         return short, long
 
     def _relative_diff_and_z(
@@ -225,11 +233,23 @@ class UniversalTSDetectorV2:
         long: pd.Series,
         profile: DetectorProfileV2,
     ):
+        # short and long have the same index (from _rolling_stats)
         eps = 1e-9
         rel = (short - long) / (long.abs() + eps)
-        med = rel.median()
-        mad = (rel - med).abs().median() + eps
+        # Replace inf with NaN for safe handling
+        rel = rel.replace([np.inf, -np.inf], np.nan)
+        # Compute robust z-score, using only finite values
+        rel_clean = rel.dropna()
+        if len(rel_clean) == 0:
+            # All values are NaN/inf, return NaN series
+            return rel, pd.Series([np.nan] * len(rel), index=rel.index)
+        med = rel_clean.median()
+        mad = (rel_clean - med).abs().median() + eps
+        if mad <= 0 or not np.isfinite(mad):
+            mad = eps
         z = (rel - med) / mad
+        # Replace inf with NaN
+        z = z.replace([np.inf, -np.inf], np.nan)
         return rel, z
 
     def _simple_cusum(self, z: pd.Series, k: float = 0.5):
@@ -238,10 +258,15 @@ class UniversalTSDetectorV2:
         last_pos = 0.0
         last_neg = 0.0
         for zi in z:
-            last_pos = max(0.0, last_pos + zi - k)
-            last_neg = min(0.0, last_neg + zi + k)
-            cpos.append(last_pos)
-            cneg.append(last_neg)
+            # Пропускаем NaN значения, сохраняя предыдущее состояние
+            if pd.isna(zi) or np.isinf(zi):
+                cpos.append(last_pos)
+                cneg.append(last_neg)
+            else:
+                last_pos = max(0.0, last_pos + float(zi) - k)
+                last_neg = min(0.0, last_neg + float(zi) + k)
+                cpos.append(last_pos)
+                cneg.append(last_neg)
         return pd.Series(cpos, index=z.index), pd.Series(cneg, index=z.index)
 
     def _ruptures_change_point(self, x: pd.Series):
