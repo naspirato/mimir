@@ -101,3 +101,4 @@ class AlertEngineV2:
             "last_commit": commit,
         }
         return alerts
+
